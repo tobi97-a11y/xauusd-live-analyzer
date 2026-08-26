@@ -28,7 +28,7 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
 .trade-plan-card span{display:block;color:var(--muted);font-size:11px}
 .trade-plan-card strong{display:block;font-size:15px;margin-top:2px}
 .trade-plan-reason{margin-top:10px;color:#c1cbe0;font-size:12px;line-height:1.45}
-.trade-plan-warning{margin-top:8px;color:var(--muted);font-size:11px}
+.trade-live-dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 10px rgba(53,224,177,.85);display:inline-block;animation:tradePulse 1.6s infinite}.trade-live-label{font-size:10px;font-weight:900;letter-spacing:.12em;color:var(--good)}.trade-countdown{font-size:10px;color:var(--muted);margin-top:4px;white-space:nowrap}@keyframes tradePulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.78)}}.trade-plan-warning{margin-top:8px;color:var(--muted);font-size:11px}
 @media(max-width:600px){.trade-plan-grid{grid-template-columns:1fr 1fr}}
 </style>
 </head>
@@ -42,7 +42,13 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
       <div class="trade-plan-kicker">HANDELSEMPFEHLUNG</div>
       <div id="tradePlanAction" class="trade-plan-action hold">HALTEN / WARTEN</div>
     </div>
-    <div id="tradePlanScore" class="label">Score —</div>
+    <div style="text-align:right">
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:7px">
+        <span class="trade-live-dot"></span><span class="trade-live-label">LIVE</span>
+      </div>
+      <div id="tradePlanScore" class="label">Score —</div>
+      <div id="tradePlanCountdown" class="trade-countdown">Nächste Aktualisierung: —</div>
+    </div>
   </div>
   <div class="trade-plan-grid">
     <div class="trade-plan-card"><span>Einstiegszone</span><strong id="planEntry">—</strong></div>
@@ -94,6 +100,20 @@ function renderTradePlan(a){
   $("planRR").textContent=p.rr; $("planTrigger").textContent=p.trigger;
   $("planReason").textContent=p.reason;
 }
+
+let nextRefreshAt=0;
+function startTradeCountdown(ms){
+  if(!Number.isFinite(ms) || ms<=0) return;
+  nextRefreshAt=Date.now()+ms;
+  if(window.tradeCountdownTimer) clearInterval(window.tradeCountdownTimer);
+  window.tradeCountdownTimer=setInterval(()=>{
+    const el=$("tradePlanCountdown"); if(!el) return;
+    const left=Math.max(0,nextRefreshAt-Date.now());
+    el.textContent=`Nächste Aktualisierung: ${Math.ceil(left/1000)} s`;
+    if(left<=0) clearInterval(window.tradeCountdownTimer);
+  },250);
+  const el=$("tradePlanCountdown"); if(el) el.textContent=`Nächste Aktualisierung: ${Math.ceil(ms/1000)} s`;
+}
 function render(){const a=state.results[state.tf];if(!a)return;$("price").textContent=fmt(state.price??a.price);$("rsi").textContent=fmt(a.rsi);$("macd").textContent=`${fmt(a.macd)} / ${fmt(a.signal)}`;$("ema").textContent=`${fmt(a.ema20)} / ${fmt(a.ema50)}`;$("atr").textContent=fmt(a.atr);const s=$("signal");s.textContent=a.sig;s.className="signal "+(a.sig==="BUY"?"buy":a.sig==="SELL"?"sell":"neutral");$("confidence").textContent=`Modellscore ${a.score>0?"+":""}${a.score} / 100`;renderTradePlan(a);$("trendscore").textContent=a.trend;$("momscore").textContent=a.momentum;const vals=Object.values(state.results).filter(Boolean),mtf=Math.round(vals.reduce((sum,v)=>sum+v.score,0)/Math.max(1,vals.length));$("mtfscore").textContent=mtf;$("trendbar").style.width=((a.trend+100)/2)+"%";$("mombar").style.width=((a.momentum+100)/2)+"%";$("mtfbar").style.width=((mtf+100)/2)+"%";const target=a.price+a.atr*(a.score/100)*1.5,low=a.price-a.atr,high=a.price+a.atr;$("low").textContent=fmt(low);$("target").textContent=fmt(target);$("high").textContent=fmt(high);const span=Math.max(high-low,.01),start=Math.max(0,Math.min(100,(Math.min(target,low)-low)/span*100));$("zone").style.left=start+"%";$("zone").style.width=Math.max(2,Math.min(100,Math.abs(target-a.price)/span*100))+"%";$("tfCards").innerHTML=vals.map(v=>`<div class="tfcard"><div class="name">${v.tf}</div><div class="sig ${v.sig==="BUY"?"buy":v.sig==="SELL"?"sell":"neutral"}">${v.sig}</div><div class="label">Score ${v.score}</div></div>`).join("");if(state.data[state.tf])drawChart(state.data[state.tf])}
 async function api(url){const r=await fetch(url,{cache:"no-store"});let j;try{j=await r.json()}catch{throw new Error(`Backend antwortet mit HTTP ${r.status}`)}if(!r.ok||j.status==="error")throw new Error(j.message||`HTTP ${r.status}`);return j}
 async function load(tf){const j=await api(`/api/history?interval=${encodeURIComponent(tf)}&outputsize=180`);const d=j.values.map(x=>({time:Math.floor(new Date(x.datetime).getTime()/1000),open:+x.open,high:+x.high,low:+x.low,close:+x.close})).filter(x=>[x.time,x.open,x.high,x.low,x.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time);if(d.length<60)throw new Error(`${tf}: zu wenige Kursdaten (${d.length})`);state.data[tf]=d;state.results[tf]=analyze(tf,d);if(tf===state.tf){drawChart(d);render()}}
@@ -132,7 +152,7 @@ async function refreshPrice(){try{const j=await api("/api/price");state.price=j.
 document.querySelectorAll(".tf").forEach(b=>b.addEventListener("click",async()=>{document.querySelectorAll(".tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.tf=b.dataset.tf;if(state.data[state.tf]){drawChart(state.data[state.tf]);render()}else{setStatus("Lade "+state.tf+"…");try{await load(state.tf);setStatus("Kursdaten live",true)}catch(e){$("error").textContent=e.message;setStatus("Kursdaten-Fehler")}}}));
 $("retry").addEventListener("click",loadInitial);window.addEventListener("resize",()=>{if(state.data[state.tf])drawChart(state.data[state.tf])});
 const wsUrl=(location.protocol==="https:"?"wss://":"ws://")+location.host+"/stream";let ws;function connectWS(){try{ws=new WebSocket(wsUrl);ws.onopen=()=>setStatus("Live-Feed verbunden",true);ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==="tick"&&Number.isFinite(Number(m.price))){state.price=Number(m.price);$("price").textContent=fmt(state.price);$("stamp").textContent=new Date((Number(m.timestamp)||Date.now()/1000)*1000).toLocaleTimeString("de-DE")+" · XAU/USD"}else if(m.type==="status"&&!m.connected&&state.data[state.tf])setStatus("Kursdaten über Fallback",true)}catch{}};ws.onclose=()=>setTimeout(connectWS,5000);ws.onerror=()=>{}}catch{setTimeout(connectWS,5000)}}
-loadInitial();refreshPrice();setInterval(refreshPrice,15000);setInterval(()=>load(state.tf).catch(e=>console.warn("Refresh:",e.message)),60000);connectWS();
+loadInitial();refreshPrice();startTradeCountdown(15000);setInterval(refreshPrice,15000);setInterval(()=>load(state.tf).catch(e=>console.warn("Refresh:",e.message)),60000);connectWS();
 </script>
 
 </body></html>
