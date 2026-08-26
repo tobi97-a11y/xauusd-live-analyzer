@@ -52,6 +52,20 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
 .th-empty{padding:18px;text-align:center;color:var(--muted);font-size:11px}.th-status{max-width:58%;text-align:right}.th-row .th-meta{grid-template-columns:repeat(2,1fr)}
 .th-clear{border:1px solid rgba(255,109,130,.35);background:transparent;color:var(--bad);border-radius:9px;padding:7px 10px;font-size:10px;font-weight:800;cursor:pointer}
 @media(max-width:600px){.th-summary{grid-template-columns:1fr 1fr}.th-summary .th-card:last-child{grid-column:1/-1}}
+
+<style>
+.vantage-panel{margin-top:14px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(19,29,50,.98),rgba(13,21,37,.98));padding:14px}
+.vp-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.vp-title{font-size:15px;font-weight:900}.vp-sub{font-size:10px;color:var(--muted);margin-top:3px}
+.vp-badge{font-size:10px;font-weight:900;letter-spacing:.08em;padding:6px 9px;border-radius:999px;background:#18243a;color:#9eb0cf}
+.vp-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.vp-card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px}
+.vp-card span{display:block;color:var(--muted);font-size:10px}.vp-card strong{display:block;font-size:13px;margin-top:3px}
+.vp-test{margin-top:10px;width:100%;border:1px solid var(--line);background:#17253d;color:#e8eef9;border-radius:10px;padding:9px;font-weight:900;cursor:pointer}
+.vp-log{margin-top:9px;background:#0a1221;border:1px solid var(--line);border-radius:10px;padding:9px;font-size:10px;line-height:1.5;color:#b9c5da}
+.vp-warning{margin-top:9px;font-size:10px;line-height:1.45;color:var(--warn)}
+.vp-live{margin-top:10px;padding:9px;border:1px solid rgba(255,109,130,.25);border-radius:10px;background:rgba(80,25,36,.18);font-size:10px;color:#ffb1bb}
+</style>
 </style>
 </style>
 </style>
@@ -152,6 +166,28 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
     <div class="th-card"><span>Offen</span><strong id="thOpen">0</strong></div>
   </div>
   <div id="thList" class="th-list"><div class="th-empty">Noch keine Demo-Orders vorhanden.</div></div>
+</div>
+
+<div id="vantagePanel" class="vantage-panel">
+  <div class="vp-head">
+    <div>
+      <div class="vp-title">🔌 VANTAGE / MT5 VERBINDUNG</div>
+      <div class="vp-sub">Verbindungstest – Orderausführung bleibt gesperrt</div>
+    </div>
+    <div id="vpBadge" class="vp-badge">NICHT GETESTET</div>
+  </div>
+  <div class="vp-grid">
+    <div class="vp-card"><span>Broker</span><strong>Vantage</strong></div>
+    <div class="vp-card"><span>Plattform</span><strong>MetaTrader 5</strong></div>
+    <div class="vp-card"><span>Server</span><strong>VantageMarkets-Live</strong></div>
+    <div class="vp-card"><span>Symbol</span><strong>XAUUSD</strong></div>
+    <div class="vp-card"><span>Verbindung</span><strong id="vpConnection">—</strong></div>
+    <div class="vp-card"><span>Konto / Equity</span><strong id="vpAccount">—</strong></div>
+  </div>
+  <button id="vpTest" class="vp-test">VERBINDUNG PRÜFEN</button>
+  <div id="vpLog" class="vp-log">Noch kein Verbindungstest durchgeführt.</div>
+  <div class="vp-warning">⚠️ Diese Web-Version sendet keine Vantage-Orders. Benutzername, Passwort oder Investor-Passwort werden nicht in der Webseite abgefragt oder gespeichert.</div>
+  <div class="vp-live">🔒 LIVE-ORDER AUSFÜHRUNG: GESPERRT<br>Erst nach erfolgreicher MT5-Verbindung und einem separaten Sicherheits-Setup darf eine echte Order-Schnittstelle aktiviert werden.</div>
 </div>
 <script>
 const state={tf:"1min",data:{},results:{},price:null,historySource:null};
@@ -439,5 +475,45 @@ connectWS();
   setInterval(evaluateDemo,1000);
   render();
   if(demoEnabled)log.textContent="Demo-Automatik aktiv · warte auf Live-Preis/Analyse…";
+})();
+</script>
+
+<script>
+(function(){
+  const test=document.getElementById("vpTest");
+  const badge=document.getElementById("vpBadge");
+  const conn=document.getElementById("vpConnection");
+  const account=document.getElementById("vpAccount");
+  const log=document.getElementById("vpLog");
+
+  async function runTest(){
+    test.disabled=true;
+    test.textContent="PRÜFE VERBINDUNG…";
+    badge.textContent="PRÜFUNG";
+    conn.textContent="wird geprüft…";
+    account.textContent="—";
+    log.textContent="Prüfe Server-Konfiguration und MT5-Verbindungsstatus…";
+    try{
+      const r=await fetch("/api/vantage/status",{cache:"no-store"});
+      if(!r.ok) throw new Error("Server-Endpunkt nicht verfügbar ("+r.status+")");
+      const d=await r.json();
+      if(d.server && d.server!=="VantageMarkets-Live"){
+        log.textContent="Serverantwort erhalten, aber der konfigurierte Server stimmt nicht mit VantageMarkets-Live überein.";
+      }else{
+        log.textContent=d.message || "Verbindungsstatus erhalten.";
+      }
+      conn.textContent=d.connected?"🟢 verbunden":"🟡 nicht verbunden";
+      account.textContent=d.account ? String(d.account)+(d.equity!=null?" · Equity "+d.equity:"") : "nicht verfügbar";
+      badge.textContent=d.connected?"VERBUNDEN":"NICHT VERBUNDEN";
+    }catch(e){
+      badge.textContent="NICHT VERBUNDEN";
+      conn.textContent="🔴 nicht verfügbar";
+      log.textContent="Kein MT5-Verbindungstest möglich: "+e.message+" · Die Web-App läuft weiterhin ohne Orderausführung.";
+    }finally{
+      test.disabled=false;
+      test.textContent="VERBINDUNG PRÜFEN";
+    }
+  }
+  test.addEventListener("click",runTest);
 })();
 </script>
