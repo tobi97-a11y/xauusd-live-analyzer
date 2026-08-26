@@ -97,6 +97,8 @@ wss.on("connection", ws => {
 
 connectTwelveData();
 
-server.listen(PORT, () => {
+app.get("/api/health", (req, res) => res.json({ok:true, symbol:SYMBOL, apiKeyConfigured:Boolean(API_KEY)}));
+
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`XAU/USD Analyzer läuft auf http://localhost:${PORT}`);
 });
