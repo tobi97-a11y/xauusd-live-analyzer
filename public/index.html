@@ -49,7 +49,7 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
 .th-list{display:flex;flex-direction:column;gap:7px;max-height:360px;overflow:auto}
 .th-row{border:1px solid var(--line);background:#0a1221;border-radius:10px;padding:10px}.th-row-head{display:flex;justify-content:space-between;gap:8px}.th-side{font-weight:900}.th-side.buy{color:var(--good)}.th-side.sell{color:var(--bad)}
 .th-status{font-size:10px;font-weight:900;color:var(--muted)}.th-meta{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:7px}.th-meta div{font-size:10px;color:var(--muted)}.th-meta b{color:#dbe5f7;font-weight:700}
-.th-empty{padding:18px;text-align:center;color:var(--muted);font-size:11px}
+.th-empty{padding:18px;text-align:center;color:var(--muted);font-size:11px}.th-status{max-width:58%;text-align:right}.th-row .th-meta{grid-template-columns:repeat(2,1fr)}
 .th-clear{border:1px solid rgba(255,109,130,.35);background:transparent;color:var(--bad);border-radius:9px;padding:7px 10px;font-size:10px;font-weight:800;cursor:pointer}
 @media(max-width:600px){.th-summary{grid-template-columns:1fr 1fr}.th-summary .th-card:last-child{grid-column:1/-1}}
 </style>
@@ -154,7 +154,7 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
   <div id="thList" class="th-list"><div class="th-empty">Noch keine Demo-Orders vorhanden.</div></div>
 </div>
 <script>
-const state={tf:"1min",data:{},results:{},price:null};
+const state={tf:"1min",data:{},results:{},price:null,historySource:null};
 const $=id=>document.getElementById(id);
 function fmt(x){return Number.isFinite(Number(x))?Number(x).toFixed(2):"—"}
 function setStatus(text,on=false){$("status").textContent=text;$("dot").classList.toggle("on",on)}
@@ -207,56 +207,72 @@ function startTradeCountdown(ms){
 }
 function render(){const a=state.results[state.tf];if(!a)return;$("price").textContent=fmt(state.price??a.price);$("rsi").textContent=fmt(a.rsi);$("macd").textContent=`${fmt(a.macd)} / ${fmt(a.signal)}`;$("ema").textContent=`${fmt(a.ema20)} / ${fmt(a.ema50)}`;$("atr").textContent=fmt(a.atr);const s=$("signal");s.textContent=a.sig;s.className="signal "+(a.sig==="BUY"?"buy":a.sig==="SELL"?"sell":"neutral");$("confidence").textContent=`Modellscore ${a.score>0?"+":""}${a.score} / 100`;renderTradePlan(a);$("trendscore").textContent=a.trend;$("momscore").textContent=a.momentum;const vals=Object.values(state.results).filter(Boolean),mtf=Math.round(vals.reduce((sum,v)=>sum+v.score,0)/Math.max(1,vals.length));$("mtfscore").textContent=mtf;$("trendbar").style.width=((a.trend+100)/2)+"%";$("mombar").style.width=((a.momentum+100)/2)+"%";$("mtfbar").style.width=((mtf+100)/2)+"%";const target=a.price+a.atr*(a.score/100)*1.5,low=a.price-a.atr,high=a.price+a.atr;$("low").textContent=fmt(low);$("target").textContent=fmt(target);$("high").textContent=fmt(high);const span=Math.max(high-low,.01),start=Math.max(0,Math.min(100,(Math.min(target,low)-low)/span*100));$("zone").style.left=start+"%";$("zone").style.width=Math.max(2,Math.min(100,Math.abs(target-a.price)/span*100))+"%";$("tfCards").innerHTML=vals.map(v=>`<div class="tfcard"><div class="name">${v.tf}</div><div class="sig ${v.sig==="BUY"?"buy":v.sig==="SELL"?"sell":"neutral"}">${v.sig}</div><div class="label">Score ${v.score}</div></div>`).join("");if(state.data[state.tf])drawChart(state.data[state.tf])}
 async function api(url){const r=await fetch(url,{cache:"no-store"});let j;try{j=await r.json()}catch{throw new Error(`Backend antwortet mit HTTP ${r.status}`)}if(!r.ok||j.status==="error")throw new Error(j.message||`HTTP ${r.status}`);return j}
-async function load(tf){const j=await api(`/api/history?interval=${encodeURIComponent(tf)}&outputsize=180`);const d=j.values.map(x=>({time:Math.floor(new Date(x.datetime).getTime()/1000),open:+x.open,high:+x.high,low:+x.low,close:+x.close})).filter(x=>[x.time,x.open,x.high,x.low,x.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time);if(d.length<60)throw new Error(`${tf}: zu wenige Kursdaten (${d.length})`);state.data[tf]=d;state.results[tf]=analyze(tf,d);if(tf===state.tf){drawChart(d);render()}}
+const CHART_CACHE_KEY="xauusdAnalyzerChartCacheV3";
+function saveChartCache(tf,d){try{const all=JSON.parse(localStorage.getItem(CHART_CACHE_KEY)||"{}");all[tf]=d.slice(-180);localStorage.setItem(CHART_CACHE_KEY,JSON.stringify(all));}catch(e){console.warn("Chart-Cache:",e.message)}}
+function restoreChartCache(){try{const all=JSON.parse(localStorage.getItem(CHART_CACHE_KEY)||localStorage.getItem("xauusdAnalyzerChartCacheV2")||"{}");for(const tf of Object.keys(all||{})){const d=Array.isArray(all[tf])?all[tf].filter(x=>[x.time,x.open,x.high,x.low,x.close].every(Number.isFinite)):[];if(d.length>=2){state.data[tf]=d;state.results[tf]=analyze(tf,d);}}if(state.data[state.tf]){drawChart(state.data[state.tf]);render();return true}}catch(e){console.warn("Chart-Cache laden:",e.message)}return false}
+function updateLiveCandle(price,timestamp){
+  if(!Number.isFinite(price)||!Number.isFinite(timestamp)) return;
+  const tfSeconds={"1min":60,"5min":300,"15min":900,"1h":3600};
+  for(const tf of Object.keys(state.data)){
+    const d=state.data[tf]; if(!d||!d.length) continue;
+    const step=tfSeconds[tf]||60, bucket=Math.floor(timestamp/step)*step;
+    let last=d[d.length-1];
+    if(last.time!==bucket){
+      last={time:bucket,open:price,high:price,low:price,close:price};d.push(last);if(d.length>180)d.splice(0,d.length-180);
+    }else{
+      last.close=price;last.high=Math.max(last.high,price);last.low=Math.min(last.low,price);
+    }
+    state.results[tf]=analyze(tf,d);saveChartCache(tf,d);
+  }
+  if(state.data[state.tf]){drawChart(state.data[state.tf]);render();}
+  if(window.demoTradeHistory && typeof window.demoTradeHistory.onMarketPrice==="function") window.demoTradeHistory.onMarketPrice(price);
+}
+async function load(tf){const j=await api(`/api/history?interval=${encodeURIComponent(tf)}&outputsize=180`);state.historySource=j.source||null;const d=j.values.map(x=>({time:Math.floor(new Date(x.datetime).getTime()/1000),open:+x.open,high:+x.high,low:+x.low,close:+x.close})).filter(x=>[x.time,x.open,x.high,x.low,x.close].every(Number.isFinite)).sort((a,b)=>a.time-b.time);if(d.length<60)throw new Error(`${tf}: zu wenige Kursdaten (${d.length})`);state.data[tf]=d;state.results[tf]=analyze(tf,d);saveChartCache(tf,d);if(tf===state.tf){drawChart(d);render()}}
 async function loadInitial(){
   $("error").textContent="";
   $("retry").hidden=true;
   setStatus("Verbinde mit Kursserver…",false);
-  // First prove the live-price path works. This keeps the UI from being stuck
-  // on "warte auf Kursdaten" if historical candles are temporarily unavailable.
+  const restored=restoreChartCache();
   try {
     const h=await api("/api/health");
     if(!h.apiKeyConfigured) throw new Error("TWELVE_DATA_API_KEY fehlt in Render → Environment.");
     await refreshPrice();
-    setStatus("Live-Preis verbunden",true);
+    setStatus(restored?"Live-Preis verbunden · Chart aus Speicher":"Live-Preis verbunden",true);
   } catch(e) {
-    $("error").textContent=e.message;
-    setStatus("Live-Preis Fehler",false);
-    $("retry").hidden=false;
+    if(!restored){ $("error").textContent=e.message; setStatus("Live-Preis Fehler",false); $("retry").hidden=false; return; }
+    setStatus("Chart aus Speicher · Live-Preis nicht verfügbar",true);
     return;
   }
   try {
-    await load(state.tf);
-    setStatus("Kursdaten live",true);
+    // If a valid local chart is already present, do not immediately spend another
+    // historical-data request. Live ticks keep the current candle moving.
+    if(!restored || !state.data[state.tf] || state.data[state.tf].length<60){
+      await load(state.tf);
+    }
+    setStatus(state.historySource?`Kursdaten live · ${state.historySource}`:"Kursdaten live",true);
     $("stamp").textContent=new Date().toLocaleTimeString("de-DE")+" · XAU/USD";
   } catch(e) {
     console.warn("Historie:",e.message);
-    $("error").textContent="Live-Preis funktioniert. Historische Kerzen/Indikatoren konnten noch nicht geladen werden: "+e.message;
-    setStatus("Live-Preis aktiv",true);
-  }
-  for(const tf of ["5min","15min","1h"]){
-    try { await load(tf); }
-    catch(e){ console.warn(tf,e.message); }
+    if(!state.data[state.tf]) $("error").textContent="Live-Preis funktioniert, historische Kerzen sind derzeit nicht verfügbar. Der Chart bleibt aus dem lokalen Speicher sichtbar, sobald einmal Daten geladen wurden.";
+    setStatus("Live-Preis aktiv · Chart-Cache",true);
   }
 }
-async function refreshPrice(){try{const j=await api("/api/price");state.price=j.price;$("price").textContent=fmt(j.price);$("stamp").textContent=new Date((Number(j.timestamp)||Date.now()/1000)*1000).toLocaleTimeString("de-DE")+" · XAU/USD";$("dot").classList.add("on");if($("status").textContent.includes("Fehler"))setStatus("Live",true)}catch(e){console.warn("Preis:",e.message)}}
-document.querySelectorAll(".tf").forEach(b=>b.addEventListener("click",async()=>{document.querySelectorAll(".tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.tf=b.dataset.tf;if(state.data[state.tf]){drawChart(state.data[state.tf]);render()}else{setStatus("Lade "+state.tf+"…");try{await load(state.tf);setStatus("Kursdaten live",true)}catch(e){$("error").textContent=e.message;setStatus("Kursdaten-Fehler")}}}));
+async function refreshPrice(){try{const j=await api("/api/price");state.price=j.price;$("price").textContent=fmt(j.price);$("stamp").textContent=new Date((Number(j.timestamp)||Date.now()/1000)*1000).toLocaleTimeString("de-DE")+" · XAU/USD";$("dot").classList.add("on");if($("status").textContent.includes("Fehler"))setStatus("Live",true);if(window.demoTradeHistory && typeof window.demoTradeHistory.onMarketPrice==="function") window.demoTradeHistory.onMarketPrice(j.price);}catch(e){console.warn("Preis:",e.message)}}
+document.querySelectorAll(".tf").forEach(b=>b.addEventListener("click",async()=>{document.querySelectorAll(".tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.tf=b.dataset.tf;if(state.data[state.tf]){drawChart(state.data[state.tf]);render()}else{setStatus("Lade "+state.tf+"…");try{await load(state.tf);setStatus(state.historySource?`Kursdaten live · ${state.historySource}`:"Kursdaten live",true)}catch(e){$("error").textContent=e.message;setStatus("Kursdaten-Fehler")}}}));
 $("retry").addEventListener("click",loadInitial);window.addEventListener("resize",()=>{if(state.data[state.tf])drawChart(state.data[state.tf])});
-const wsUrl=(location.protocol==="https:"?"wss://":"ws://")+location.host+"/stream";let ws;function connectWS(){try{ws=new WebSocket(wsUrl);ws.onopen=()=>setStatus("Live-Feed verbunden",true);ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==="tick"&&Number.isFinite(Number(m.price))){state.price=Number(m.price);$("price").textContent=fmt(state.price);$("stamp").textContent=new Date((Number(m.timestamp)||Date.now()/1000)*1000).toLocaleTimeString("de-DE")+" · XAU/USD"}else if(m.type==="status"&&!m.connected&&state.data[state.tf])setStatus("Kursdaten über Fallback",true)}catch{}};ws.onclose=()=>setTimeout(connectWS,5000);ws.onerror=()=>{}}catch{setTimeout(connectWS,5000)}}
+const wsUrl=(location.protocol==="https:"?"wss://":"ws://")+location.host+"/stream";let ws;function connectWS(){try{ws=new WebSocket(wsUrl);ws.onopen=()=>setStatus("Live-Feed verbunden",true);ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==="tick"&&Number.isFinite(Number(m.price))){state.price=Number(m.price);$("price").textContent=fmt(state.price);$("stamp").textContent=new Date((Number(m.timestamp)||Date.now()/1000)*1000).toLocaleTimeString("de-DE")+" · XAU/USD";updateLiveCandle(state.price,Number(m.timestamp)||Math.floor(Date.now()/1000));}else if(m.type==="status"&&!m.connected&&state.data[state.tf])setStatus("Kursdaten über Fallback",true)}catch{}};ws.onclose=()=>setTimeout(connectWS,5000);ws.onerror=()=>{}}catch{setTimeout(connectWS,5000)}}
 let refreshBusy=false;
 async function autoRefresh(){
+  // The WebSocket updates price and candles without consuming a history API call.
+  // Use the REST price endpoint only as a slow fallback if the feed is unavailable.
   if(refreshBusy)return;
   refreshBusy=true;
   try{
-    await refreshPrice();
-    await load(state.tf);
-    setStatus("Kursdaten live",true);
+    if(!ws || ws.readyState!==WebSocket.OPEN) await refreshPrice();
+    if(state.data[state.tf]){drawChart(state.data[state.tf]);render();}
     startTradeCountdown(30000);
-  }catch(e){
-    console.warn("Automatische Aktualisierung:",e.message);
-  }finally{
-    refreshBusy=false;
-  }
+  }catch(e){console.warn("Automatische Aktualisierung:",e.message)}
+  finally{refreshBusy=false;}
 }
 loadInitial();
 refreshPrice();
@@ -269,167 +285,159 @@ connectWS();
 
 <script>
 (function(){
-  const toggle=document.getElementById("autoTradeToggle");
-  const mode=document.getElementById("atMode");
-  const log=document.getElementById("atLog");
-  const saved=document.getElementById("atSettingsSaved");
+  const $h=id=>document.getElementById(id);
+  const toggle=$h("autoTradeToggle"), mode=$h("atMode"), log=$h("atLog"), saved=$h("atSettingsSaved");
   const inputs={
-    risk:document.getElementById("atRiskInput"),
-    minScore:document.getElementById("atMinScoreInput"),
-    maxTrades:document.getElementById("atMaxTradesInput"),
-    dailyLoss:document.getElementById("atDailyLossInput")
+    risk:$h("atRiskInput"), minScore:$h("atMinScoreInput"), maxTrades:$h("atMaxTradesInput"), dailyLoss:$h("atDailyLossInput")
   };
-  const KEY="xauusdAnalyzerAutoSettingsV2";
-  const AUTO_KEY="xauusdAnalyzerAutoEnabledV1";
+  const SETTINGS_KEY="xauusdAnalyzerAutoSettingsV3";
+  const AUTO_KEY="xauusdAnalyzerAutoEnabledV2";
+  const TRADES_KEY="xauusdAnalyzerDemoTradesV2";
   const defaults={risk:0.5,minScore:25,maxTrades:1,dailyLoss:2};
   let settings={...defaults};
-  try{settings={...defaults,...JSON.parse(localStorage.getItem(KEY)||"{}")};}catch(e){}
-  function clamp(v,min,max){return Math.min(max,Math.max(min,v));}
-  function loadInputs(){
-    inputs.risk.value=settings.risk;
-    inputs.minScore.value=settings.minScore;
-    inputs.maxTrades.value=settings.maxTrades;
-    inputs.dailyLoss.value=settings.dailyLoss;
-  }
-  function readSettings(){
-    settings.risk=clamp(Number(inputs.risk.value)||defaults.risk,.1,10);
-    settings.minScore=Math.round(clamp(Number(inputs.minScore.value)||defaults.minScore,1,100));
-    settings.maxTrades=Math.round(clamp(Number(inputs.maxTrades.value)||defaults.maxTrades,1,20));
-    settings.dailyLoss=clamp(Number(inputs.dailyLoss.value)||defaults.dailyLoss,.1,20);
-    inputs.risk.value=settings.risk;inputs.minScore.value=settings.minScore;inputs.maxTrades.value=settings.maxTrades;inputs.dailyLoss.value=settings.dailyLoss;
-    localStorage.setItem(KEY,JSON.stringify(settings));
-    saved.textContent=`Gespeichert · ${settings.maxTrades} Trades · ${settings.risk.toLocaleString("de-DE")} % Risiko · ${settings.dailyLoss.toLocaleString("de-DE")} % Tageslimit`;
-    if(demoEnabled)evaluateDemo();
-  }
-  Object.values(inputs).forEach(i=>{i.addEventListener("change",readSettings);i.addEventListener("blur",readSettings);i.addEventListener("keydown",e=>{if(e.key==="Enter")readSettings();});});
-  loadInputs();
-  let lastKey="";
-  let demoEnabled=false;
-  try{demoEnabled=localStorage.getItem(AUTO_KEY)==="1";}catch(e){demoEnabled=false;}
-  toggle.checked=demoEnabled;
-  mode.textContent=demoEnabled?"DEMO AKTIV":"AUS";
-  mode.className="at-status "+(demoEnabled?"demo":"off");
-  log.textContent=demoEnabled?"Demo-Automatik aktiviert. Stelle Analyse wieder her…":"Demo-Automatik deaktiviert.";
-
-  function getCurrentAnalysis(){
-    try{
-      if(typeof state==="undefined" || !state.results) return null;
-      return state.results[state.tf] || null;
-    }catch(e){return null}
-  }
-  function fmtAt(v){return Number.isFinite(v)?Number(v).toFixed(2):"—"}
-
-  function evaluateDemo(){
-    if(!demoEnabled)return;
-    const a=getCurrentAnalysis();
-    if(!a || !Number.isFinite(a.price) || !Number.isFinite(a.atr))return;
-    const sig=a.sig;
-    if(sig!=="BUY" && sig!=="SELL") {
-      log.textContent="Kein Trade: Signal ist HALTEN/WARTEN.";
-      return;
-    }
-    if(Math.abs(a.score)<settings.minScore){
-      log.textContent=`Kein Trade: Score ${a.score} liegt unter dem Mindestscore ±${settings.minScore}.`;
-      return;
-    }
-    const openCount=window.demoTradeHistory?window.demoTradeHistory.get().filter(t=>t.status==="open").length:0;
-    if(openCount>=settings.maxTrades){
-      log.textContent=`Kein Trade: ${openCount}/${settings.maxTrades} maximale offene Trades erreicht.`;
-      return;
-    }
-    const key=`${sig}|${a.score}|${fmtAt(a.price)}|${openCount}`;
-    if(key===lastKey)return;
-    lastKey=key;
-    const p=a.price, A=Math.max(a.atr,.01);
-    const entry=p;
-    const sl=sig==="BUY"?p-A:p+A;
-    const tp1=sig==="BUY"?p+A:p-A;
-    const tp2=sig==="BUY"?p+2*A:p-2*A;
-    log.innerHTML=`<b>${sig==="BUY"?"🟢 DEMO BUY":"🔴 DEMO SELL"}</b> · Kurs ${fmtAt(entry)} · SL ${fmtAt(sl)} · TP1 ${fmtAt(tp1)} · TP2 ${fmtAt(tp2)} · Score ${a.score} · offen ${openCount+1}/${settings.maxTrades}`;
-    if(window.demoTradeHistory){
-      window.demoTradeHistory.create({side:sig,entry,sl,tp1,tp2,score:a.score,symbol:"XAU/USD",riskPct:settings.risk});
-    }
-  }
-
-  toggle.addEventListener("change",()=>{
-    demoEnabled=toggle.checked;
-    try{localStorage.setItem(AUTO_KEY,demoEnabled?"1":"0");}catch(e){}
-    mode.textContent=demoEnabled?"DEMO AKTIV":"AUS";
-    mode.className="at-status "+(demoEnabled?"demo":"off");
-    log.textContent=demoEnabled?"Demo-Automatik aktiviert. Warte auf ein bestätigtes BUY/SELL-Signal…":"Demo-Automatik deaktiviert.";
-    if(demoEnabled)evaluateDemo();
-  });
-
-  setInterval(evaluateDemo,1000);
-})();
-</script>
-
-<script>
-(function(){
-  const KEY="xauusdAnalyzerDemoTradesV1";
   let trades=[];
   let activeTab="all";
-  try{trades=JSON.parse(localStorage.getItem(KEY)||"[]");if(!Array.isArray(trades))trades=[];}catch(e){trades=[]}
+  let demoEnabled=false;
+  let lastEntryAt=0;
+  let lastEntrySide="";
 
-  const $h=id=>document.getElementById(id);
-  const save=()=>localStorage.setItem(KEY,JSON.stringify(trades));
+  try{settings={...defaults,...JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}")} }catch(e){}
+  try{trades=JSON.parse(localStorage.getItem(TRADES_KEY)||"[]");if(!Array.isArray(trades))trades=[]}catch(e){trades=[]}
+  try{demoEnabled=localStorage.getItem(AUTO_KEY)==="1"}catch(e){demoEnabled=false}
+
   const n=v=>Number.isFinite(Number(v))?Number(v):null;
-  const money=v=>v==null?"—":Number(v).toFixed(2);
+  const fmtAt=v=>n(v)==null?"—":Number(v).toFixed(2);
+  const money=v=>n(v)==null?"—":Number(v).toFixed(2);
+  const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
+  const todayKey=()=>new Date().toLocaleDateString("sv-SE");
+  const save=()=>localStorage.setItem(TRADES_KEY,JSON.stringify(trades));
+  const getAnalysis=()=>{try{return typeof state!=="undefined"&&state.results?state.results[state.tf]:null}catch(e){return null}};
+  const openTrades=()=>trades.filter(t=>t.status==="open");
+  const todaysClosed=()=>trades.filter(t=>t.status==="closed"&&String(t.dayKey)===todayKey());
+  const dailyRiskResult=()=>todaysClosed().reduce((sum,t)=>sum+(n(t.riskResultPct)||0),0);
+
+  function loadInputs(){
+    inputs.risk.value=settings.risk;inputs.minScore.value=settings.minScore;inputs.maxTrades.value=settings.maxTrades;inputs.dailyLoss.value=settings.dailyLoss;
+    saved.textContent=`Gespeichert · ${settings.maxTrades} Trades · ${settings.risk.toLocaleString("de-DE")} % Risiko · ${settings.dailyLoss.toLocaleString("de-DE")} % Tageslimit`;
+  }
+  function readSettings(){
+    settings.risk=clamp(n(inputs.risk.value)||defaults.risk,.1,10);
+    settings.minScore=Math.round(clamp(n(inputs.minScore.value)||defaults.minScore,1,100));
+    settings.maxTrades=Math.round(clamp(n(inputs.maxTrades.value)||defaults.maxTrades,1,20));
+    settings.dailyLoss=clamp(n(inputs.dailyLoss.value)||defaults.dailyLoss,.1,20);
+    localStorage.setItem(SETTINGS_KEY,JSON.stringify(settings));loadInputs();
+    if(demoEnabled)evaluateDemo();
+  }
+  Object.values(inputs).forEach(i=>{i.addEventListener("change",readSettings);i.addEventListener("blur",readSettings);i.addEventListener("keydown",e=>{if(e.key==="Enter")readSettings()})});
+  loadInputs();
+
+  function setMode(){
+    toggle.checked=demoEnabled;mode.textContent=demoEnabled?"DEMO AKTIV":"AUS";mode.className="at-status "+(demoEnabled?"demo":"off");
+  }
+  setMode();
 
   function render(){
     const closed=trades.filter(t=>t.status==="closed");
-    const wins=closed.filter(t=>n(t.pnl)>0).length;
-    const losses=closed.filter(t=>n(t.pnl)<0).length;
+    const wins=closed.filter(t=>(n(t.pnl)||0)>0).length;
+    const losses=closed.filter(t=>(n(t.pnl)||0)<0).length;
     const net=closed.reduce((s,t)=>s+(n(t.pnl)||0),0);
-    $h("thCount").textContent=trades.length;
-    $h("thWinRate").textContent=(closed.length?((wins/closed.length)*100).toFixed(1):"0")+" %";
-    $h("thNet").textContent=money(net);
-    $h("thWins").textContent=wins;
-    $h("thLosses").textContent=losses;
-    $h("thOpen").textContent=trades.filter(t=>t.status==="open").length;
-
-    const list=activeTab==="open"?trades.filter(t=>t.status==="open"):activeTab==="closed"?trades.filter(t=>t.status==="closed"):trades;
+    $h("thCount").textContent=trades.length;$h("thWinRate").textContent=(closed.length?((wins/closed.length)*100).toFixed(1):"0")+" %";
+    $h("thNet").textContent=money(net);$h("thWins").textContent=wins;$h("thLosses").textContent=losses;$h("thOpen").textContent=openTrades().length;
+    const list=activeTab==="open"?openTrades():activeTab==="closed"?trades.filter(t=>t.status==="closed"):trades;
     if(!list.length){$h("thList").innerHTML='<div class="th-empty">Keine Orders in diesem Bereich.</div>';return}
     $h("thList").innerHTML=list.slice().reverse().map(t=>{
-      const side=(t.side||"").toUpperCase();
-      const status=t.status==="open"?"GEÖFFNET":("ABGESCHLOSSEN · "+(t.closeReason||""));
-      const pnl=t.status==="closed"?money(t.pnl):"—";
-      return `<div class="th-row">
-        <div class="th-row-head"><div class="th-side ${side.toLowerCase()}">${side==="BUY"?"🟢 BUY":"🔴 SELL"} · XAU/USD</div><div class="th-status">${status}</div></div>
-        <div class="th-meta">
-          <div>Einstieg <b>${money(t.entry)}</b></div><div>Ausstieg <b>${money(t.exit)}</b></div>
-          <div>SL <b>${money(t.sl)}</b></div><div>TP1 <b>${money(t.tp1)}</b></div>
-          <div>TP2 <b>${money(t.tp2)}</b></div><div>P/L <b>${pnl}</b></div>
-          <div>Score <b>${t.score??"—"}</b></div><div>Zeit <b>${new Date(t.time).toLocaleString("de-DE")}</b></div>
-        </div>
-      </div>`;
+      const side=(t.side||"").toUpperCase(), status=t.status==="open"?"GEÖFFNET":("ABGESCHLOSSEN · "+(t.closeReason||""));
+      const pnl=t.status==="closed"?money(t.pnl):"—", r=t.status==="closed"?money(t.pnlR):"—";
+      return `<div class="th-row"><div class="th-row-head"><div class="th-side ${side.toLowerCase()}">${side==="BUY"?"🟢 BUY":"🔴 SELL"} · XAU/USD</div><div class="th-status">${status}</div></div><div class="th-meta"><div>Einstieg <b>${money(t.entry)}</b></div><div>Ausstieg <b>${money(t.exit)}</b></div><div>SL <b>${money(t.sl)}</b></div><div>TP1 <b>${money(t.tp1)}</b></div><div>TP2 <b>${money(t.tp2)}</b></div><div>P/L <b>${pnl}</b></div><div>Ergebnis <b>${r} R</b></div><div>Score <b>${t.score??"—"}</b></div><div>Zeit <b>${new Date(t.time).toLocaleString("de-DE")}</b></div></div></div>`;
     }).join("");
   }
 
-  document.querySelectorAll(".th-tab").forEach(btn=>btn.addEventListener("click",()=>{
-    document.querySelectorAll(".th-tab").forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");activeTab=btn.dataset.tab;render();
-  }));
-  $h("thClear").addEventListener("click",()=>{
-    if(!trades.length)return;
-    if(confirm("Wirklich die gesamte Demo-Order-Historie löschen?")){trades=[];save();render();}
-  });
+  document.querySelectorAll(".th-tab").forEach(btn=>btn.addEventListener("click",()=>{document.querySelectorAll(".th-tab").forEach(b=>b.classList.remove("active"));btn.classList.add("active");activeTab=btn.dataset.tab;render()}));
+  $h("thClear").addEventListener("click",()=>{if(trades.length&&confirm("Wirklich die gesamte Demo-Order-Historie löschen?")){trades=[];save();render()}});
+
+  function closeTrade(t,exit,reason){
+    if(!t||t.status!=="open")return;
+    const x=n(exit);if(x==null)return;
+    const dir=t.side==="BUY"?1:-1;
+    const move=(x-t.entry)*dir;
+    const totalRisk=Math.max(t.initialRiskDistance,.00001);
+    const rFromMove=move/totalRisk;
+    const remaining=t.remainingPct??100;
+    t.realizedR=(t.realizedR||0)+(rFromMove*(remaining/100));
+    t.pnl=(t.realizedR||0)*t.riskPct;
+    t.pnlR=t.realizedR;
+    t.exit=x;t.closeReason=reason||"SL/TP/Trendwechsel";t.status="closed";t.closedAt=new Date().toISOString();t.riskResultPct=t.pnl;save();render();
+  }
+
+  function partialTP1(t,price){
+    if(t.tp1Hit||t.status!=="open")return;
+    const dir=t.side==="BUY"?1:-1;
+    const r=((price-t.entry)*dir)/Math.max(t.initialRiskDistance,.00001);
+    t.realizedR=(t.realizedR||0)+(r*0.5);t.remainingPct=50;t.tp1Hit=true;
+    t.sl=t.entry;t.lastEvent="TP1 erreicht · 50 % gesichert · SL auf Break-even";
+    t.pnl=(t.realizedR||0)*t.riskPct;t.pnlR=t.realizedR;save();render();
+  }
+
+  function monitor(price){
+    if(!demoEnabled||!n(price))return;
+    const a=getAnalysis();
+    const atr=Math.max(n(a?.atr)||0.01,.01);
+    const sig=a?.sig, score=n(a?.score)||0;
+    const current=openTrades();
+    for(const t of current.slice()){
+      if(t.status!=="open")continue;
+      const dir=t.side==="BUY"?1:-1;
+      // Hard SL always wins. TP levels are checked before adaptive trailing.
+      if((t.side==="BUY"&&price<=t.sl)||(t.side==="SELL"&&price>=t.sl)){closeTrade(t,price,t.tp1Hit?"Trailing-/Break-even-SL":"Stop-Loss erreicht");continue}
+      if((t.side==="BUY"&&price>=t.tp2)||(t.side==="SELL"&&price<=t.tp2)){closeTrade(t,t.tp2,"Take Profit 2 erreicht");continue}
+      if((t.side==="BUY"&&price>=t.tp1)||(t.side==="SELL"&&price<=t.tp1)){partialTP1(t,t.tp1);}
+      if(t.tp1Hit&&t.status==="open"){
+        const trail=dir>0?price-0.75*atr:price+0.75*atr;
+        t.sl=dir>0?Math.max(t.sl,trail):Math.min(t.sl,trail);
+      }
+      // A confirmed reversal closes the remainder instead of fighting the trend.
+      if(t.status==="open"&&sig&&((t.side==="BUY"&&sig==="SELL"&&score<=-settings.minScore)||(t.side==="SELL"&&sig==="BUY"&&score>=settings.minScore))){closeTrade(t,price,"Bestätigter Trendwechsel");}
+    }
+    save();render();
+  }
 
   window.demoTradeHistory={
     get:()=>trades.slice(),
-    create:(data)=>{
-      const t={id:Date.now()+"_"+Math.random().toString(36).slice(2),status:"open",time:new Date().toISOString(),...data};
-      trades.push(t);save();render();return t;
-    },
-    close:(id,exit,reason)=>{
-      const t=trades.find(x=>x.id===id);if(!t)return;
-      const e=n(t.entry),x=n(exit);
-      t.exit=x;t.closeReason=reason||"Signal/TP/SL";t.status="closed";
-      t.pnl=(e!=null&&x!=null)?(t.side==="BUY"?x-e:e-x):null;
-      t.closedAt=new Date().toISOString();save();render();
-    },
+    create:(data)=>{const t={id:Date.now()+"_"+Math.random().toString(36).slice(2),status:"open",time:new Date().toISOString(),dayKey:todayKey(),remainingPct:100,realizedR:0,initialRiskDistance:Math.abs(data.entry-data.sl),...data};trades.push(t);save();render();return t},
+    close:(id,exit,reason)=>{const t=trades.find(x=>x.id===id);if(t)closeTrade(t,exit,reason)},
+    onMarketPrice:monitor,
     render
   };
+
+  function evaluateDemo(){
+    if(!demoEnabled)return;
+    const a=getAnalysis();if(!a||!n(a.price)||!n(a.atr))return;
+    monitor(a.price);
+    const sig=a.sig, score=n(a.score)||0;
+    if(sig!=="BUY"&&sig!=="SELL"){log.textContent="Halten/Warten: Trend nicht ausreichend bestätigt.";return}
+    if(Math.abs(score)<settings.minScore){log.textContent=`Kein Trade: Score ${score} unter Mindestscore ±${settings.minScore}.`;return}
+    const loss=dailyRiskResult();
+    if(loss<=-settings.dailyLoss){log.textContent=`Tagesverlust-Limit erreicht: ${loss.toFixed(2)} % / −${settings.dailyLoss.toFixed(2)} %. Neue Trades gesperrt.`;return}
+    const open=openTrades();
+    if(open.length>=settings.maxTrades){log.textContent=`${open.length}/${settings.maxTrades} Trades offen. Positionen werden automatisch per SL/TP/Trendwechsel verwaltet.`;return}
+    const same=open.filter(t=>t.side===sig);
+    const now=Date.now();
+    const bestScore=same.length?Math.max(...same.map(t=>Math.abs(n(t.score)||0))):0;
+    const lastSame=same.length?same[same.length-1]:null;
+    const spacing=lastSame?Math.abs(a.price-lastSame.entry)>=Math.max(a.atr*0.5,.01):true;
+    const canScale=same.length>0 && score* (sig==="BUY"?1:-1) >= bestScore+15 && spacing && (now-lastEntryAt)>30000;
+    const canInitial=same.length===0 && (now-lastEntryAt)>15000;
+    if(!canInitial&&!canScale){log.textContent=`Signal ${sig} aktiv · bestehende Position wird trendfolgend verwaltet.`;return}
+    lastEntryAt=now;lastEntrySide=sig;
+    const p=a.price,A=Math.max(a.atr,.01),sl=sig==="BUY"?p-A:p+A,tp1=sig==="BUY"?p+A:p-A,tp2=sig==="BUY"?p+2*A:p-2*A;
+    const reason=canScale?"Trendfolge-Aufstockung: Score verbessert und Preis hat sich weiter in Trendrichtung bewegt.":"Bestätigter Einstieg: Trend + Momentum stimmen überein.";
+    log.innerHTML=`<b>${sig==="BUY"?"🟢 DEMO BUY":"🔴 DEMO SELL"}</b> · ${fmtAt(p)} · SL ${fmtAt(sl)} · TP1 ${fmtAt(tp1)} · TP2 ${fmtAt(tp2)} · Score ${score}<br><span style="color:#93a0bd">${reason}</span>`;
+    window.demoTradeHistory.create({side:sig,entry:p,sl,tp1,tp2,score,symbol:"XAU/USD",riskPct:settings.risk});
+  }
+
+  toggle.addEventListener("change",()=>{demoEnabled=toggle.checked;localStorage.setItem(AUTO_KEY,demoEnabled?"1":"0");setMode();log.textContent=demoEnabled?"Demo-Automatik aktiviert · überwacht offene Trades und neue Signale.":"Demo-Automatik deaktiviert.";if(demoEnabled)evaluateDemo()});
+  setInterval(evaluateDemo,1000);
   render();
+  if(demoEnabled)log.textContent="Demo-Automatik aktiv · warte auf Live-Preis/Analyse…";
 })();
 </script>
