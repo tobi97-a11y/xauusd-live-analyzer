@@ -15,6 +15,30 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
 .bars{display:grid;gap:10px;margin-top:14px}.barrow{display:grid;grid-template-columns:54px 1fr 45px;align-items:center;gap:8px}.bar{height:8px;border-radius:99px;background:#26324d;overflow:hidden}.fill{height:100%;width:50%;background:linear-gradient(90deg,var(--bad),var(--warn),var(--good))}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}.tfcard{padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--panel2)}.tfcard .name{color:var(--muted);font-size:12px}.tfcard .sig{font-size:17px;font-weight:750;margin-top:3px}
 .forecast{margin-top:14px}.range{height:22px;background:#202b45;border-radius:99px;position:relative;margin:14px 0}.range .mid{position:absolute;left:50%;top:-4px;height:30px;width:2px;background:#fff}.range .zone{position:absolute;top:4px;height:14px;border-radius:99px;background:linear-gradient(90deg,var(--bad),var(--warn),var(--good));opacity:.85}.levels{display:flex;justify-content:space-between;color:var(--muted);font-size:12px}.note{color:var(--muted);font-size:12px;margin-top:12px}.error{color:var(--bad);white-space:pre-wrap}.footer{margin-top:14px;color:var(--muted);font-size:12px}.retry{margin-top:12px;border:1px solid var(--line);background:var(--panel2);color:var(--text);padding:9px 12px;border-radius:9px}
 @media(max-width:950px){.grid{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}}@media(max-width:600px){header{padding:16px;flex-direction:column}.live{align-self:flex-start}main{padding:12px}.cards{grid-template-columns:1fr 1fr}#chart{height:330px}.price{font-size:32px}}
+
+<style>
+.autotrade-panel{margin-top:14px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(19,29,50,.98),rgba(13,21,37,.98));padding:14px}
+.autotrade-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.autotrade-title{font-size:15px;font-weight:900;letter-spacing:.04em}
+.autotrade-sub{font-size:10px;color:var(--muted);margin-top:3px}
+.at-status{font-size:10px;font-weight:900;letter-spacing:.1em;padding:6px 8px;border-radius:999px;background:#18243a;color:#8fa2c2}
+.at-status.demo{color:var(--warn)}
+.at-status.off{color:var(--muted)}
+.at-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.at-card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px}
+.at-card span{display:block;color:var(--muted);font-size:10px}
+.at-card strong{display:block;font-size:14px;margin-top:3px}
+.at-toggle-row{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.at-toggle{position:relative;width:50px;height:28px}
+.at-toggle input{opacity:0;width:0;height:0}
+.at-slider{position:absolute;inset:0;background:#27344d;border-radius:30px;cursor:pointer;transition:.2s}
+.at-slider:before{content:"";position:absolute;width:20px;height:20px;left:4px;top:4px;background:#dce5f5;border-radius:50%;transition:.2s}
+.at-toggle input:checked+.at-slider{background:var(--good)}
+.at-toggle input:checked+.at-slider:before{transform:translateX(22px)}
+.at-note{font-size:10px;color:var(--muted);line-height:1.4;margin-top:10px}
+.at-log{margin-top:10px;background:#0a1221;border:1px solid var(--line);border-radius:10px;padding:9px;font-size:11px;color:#b9c5da;max-height:100px;overflow:auto}
+.at-danger{color:var(--bad)!important}
+</style>
 </style>
 
 <style>
@@ -62,6 +86,36 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
   <div class="trade-plan-warning">Technische Entscheidungsunterstützung, keine Gewinn- oder Ausführungsgarantie.</div>
 </div><div class="metricgrid"><div class="metric"><span class="label">RSI 14</span><b id="rsi">—</b></div><div class="metric"><span class="label">MACD</span><b id="macd">—</b></div><div class="metric"><span class="label">EMA 20 / 50</span><b id="ema">—</b></div><div class="metric"><span class="label">ATR 14</span><b id="atr">—</b></div></div><div class="bars"><div class="barrow"><span>Trend</span><div class="bar"><div id="trendbar" class="fill"></div></div><span id="trendscore">0</span></div><div class="barrow"><span>Momentum</span><div class="bar"><div id="mombar" class="fill"></div></div><span id="momscore">0</span></div><div class="barrow"><span>Multi-TF</span><div class="bar"><div id="mtfbar" class="fill"></div></div><span id="mtfscore">0</span></div></div><div class="forecast"><div class="label">PROJEKTIONSBEREICH (ATR-basiert)</div><div class="range"><div id="zone" class="zone"></div><div class="mid"></div></div><div class="levels"><span id="low">—</span><b id="target">—</b><span id="high">—</span></div></div><div id="error" class="note error"></div><div class="note">Kein Garantiesignal: technische Entscheidungsunterstützung. News, Spreads und Ausführungsrisiken werden nicht berücksichtigt.</div><button id="retry" class="retry" hidden>Jetzt erneut laden</button></aside>
 </div><div class="cards" id="tfCards"></div><div class="footer">Datenquelle: Twelve Data über das sichere Backend. Der API-Key wird nicht an den Browser gesendet.</div></main>
+
+<div id="autoTradePanel" class="autotrade-panel">
+  <div class="autotrade-head">
+    <div>
+      <div class="autotrade-title">🤖 AUTO-TRADING</div>
+      <div class="autotrade-sub">Sichere Demo-Steuerung – keine Live-Orders</div>
+    </div>
+    <div id="atMode" class="at-status off">AUS</div>
+  </div>
+  <div class="at-grid">
+    <div class="at-card"><span>Verbindung</span><strong id="atConnection">Web-App online</strong></div>
+    <div class="at-card"><span>Modus</span><strong id="atAccountMode">DEMO</strong></div>
+    <div class="at-card"><span>Risiko / Trade</span><strong id="atRisk">0,5 %</strong></div>
+    <div class="at-card"><span>Mindestscore</span><strong id="atMinScore">±25</strong></div>
+    <div class="at-card"><span>Max. Trades</span><strong id="atMaxTrades">1</strong></div>
+    <div class="at-card"><span>Max. Tagesverlust</span><strong id="atDailyLoss">2 %</strong></div>
+  </div>
+  <div class="at-toggle-row">
+    <div>
+      <strong>Demo-Automatik</strong>
+      <div class="at-sub">Simuliert die nächste passende Order lokal.</div>
+    </div>
+    <label class="at-toggle">
+      <input id="autoTradeToggle" type="checkbox">
+      <span class="at-slider"></span>
+    </label>
+  </div>
+  <div id="atLog" class="at-log">Bereit. Es wurden noch keine Demo-Orders simuliert.</div>
+  <div class="at-note">⚠️ Dieser Bereich führt keine Vantage-Orders aus und speichert keine Vantage-Zugangsdaten. Live-Handel bleibt deaktiviert.</div>
+</div>
 <script>
 const state={tf:"1min",data:{},results:{},price:null};
 const $=id=>document.getElementById(id);
@@ -175,3 +229,56 @@ connectWS();
 </script>
 
 </body></html>
+
+<script>
+(function(){
+  const toggle=document.getElementById("autoTradeToggle");
+  const mode=document.getElementById("atMode");
+  const log=document.getElementById("atLog");
+  const risk=document.getElementById("atRisk");
+  let lastKey="";
+  let demoEnabled=false;
+
+  function getCurrentAnalysis(){
+    try{
+      if(typeof state==="undefined" || !state.results) return null;
+      return state.results[state.tf] || null;
+    }catch(e){return null}
+  }
+  function fmtAt(v){return Number.isFinite(v)?Number(v).toFixed(2):"—"}
+
+  function evaluateDemo(){
+    if(!demoEnabled)return;
+    const a=getCurrentAnalysis();
+    if(!a || !Number.isFinite(a.price) || !Number.isFinite(a.atr))return;
+    const sig=a.sig;
+    if(sig!=="BUY" && sig!=="SELL") {
+      log.textContent="Kein Trade: Signal ist HALTEN/WARTEN.";
+      return;
+    }
+    if(Math.abs(a.score)<25){
+      log.textContent=`Kein Trade: Score ${a.score} liegt unter dem Mindestscore ±25.`;
+      return;
+    }
+    const key=`${sig}|${a.score}|${fmtAt(a.price)}`;
+    if(key===lastKey)return;
+    lastKey=key;
+    const p=a.price, A=Math.max(a.atr,.01);
+    const entry=p;
+    const sl=sig==="BUY"?p-A:p+A;
+    const tp1=sig==="BUY"?p+A:p-A;
+    const tp2=sig==="BUY"?p+2*A:p-2*A;
+    log.innerHTML=`<b>${sig==="BUY"?"🟢 DEMO BUY":"🔴 DEMO SELL"}</b> · Kurs ${fmtAt(entry)} · SL ${fmtAt(sl)} · TP1 ${fmtAt(tp1)} · TP2 ${fmtAt(tp2)} · Score ${a.score}`;
+  }
+
+  toggle.addEventListener("change",()=>{
+    demoEnabled=toggle.checked;
+    mode.textContent=demoEnabled?"DEMO AKTIV":"AUS";
+    mode.className="at-status "+(demoEnabled?"demo":"off");
+    log.textContent=demoEnabled?"Demo-Automatik aktiviert. Warte auf ein bestätigtes BUY/SELL-Signal…":"Demo-Automatik deaktiviert.";
+    if(demoEnabled)evaluateDemo();
+  });
+
+  setInterval(evaluateDemo,1000);
+})();
+</script>
