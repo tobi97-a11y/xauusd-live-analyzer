@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: xauusd-live-analyzer
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: TWELVE_DATA_API_KEY
+        sync: false
+      - key: XAU_SYMBOL
+        value: XAU/USD
+      - key: NODE_VERSION
+        value: 20
