@@ -280,6 +280,7 @@ connectWS();
     dailyLoss:document.getElementById("atDailyLossInput")
   };
   const KEY="xauusdAnalyzerAutoSettingsV2";
+  const AUTO_KEY="xauusdAnalyzerAutoEnabledV1";
   const defaults={risk:0.5,minScore:25,maxTrades:1,dailyLoss:2};
   let settings={...defaults};
   try{settings={...defaults,...JSON.parse(localStorage.getItem(KEY)||"{}")};}catch(e){}
@@ -304,6 +305,11 @@ connectWS();
   loadInputs();
   let lastKey="";
   let demoEnabled=false;
+  try{demoEnabled=localStorage.getItem(AUTO_KEY)==="1";}catch(e){demoEnabled=false;}
+  toggle.checked=demoEnabled;
+  mode.textContent=demoEnabled?"DEMO AKTIV":"AUS";
+  mode.className="at-status "+(demoEnabled?"demo":"off");
+  log.textContent=demoEnabled?"Demo-Automatik aktiviert. Stelle Analyse wieder her…":"Demo-Automatik deaktiviert.";
 
   function getCurrentAnalysis(){
     try{
@@ -347,6 +353,7 @@ connectWS();
 
   toggle.addEventListener("change",()=>{
     demoEnabled=toggle.checked;
+    try{localStorage.setItem(AUTO_KEY,demoEnabled?"1":"0");}catch(e){}
     mode.textContent=demoEnabled?"DEMO AKTIV":"AUS";
     mode.className="at-status "+(demoEnabled?"demo":"off");
     log.textContent=demoEnabled?"Demo-Automatik aktiviert. Warte auf ein bestätigtes BUY/SELL-Signal…":"Demo-Automatik deaktiviert.";
