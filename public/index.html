@@ -118,7 +118,10 @@ function render(res){
  const cards=document.getElementById("tfCards");cards.innerHTML=tfvals.map(v=>`<div class="tfcard"><div class="name">${v.tf}</div><div class="sig ${v.sig==="BUY"?"buy":v.sig==="SELL"?"sell":"neutral"}">${v.sig}</div><div class="label">Score ${v.score}</div></div>`).join("");
 }
 async function load(tf){
- const r=await fetch("/api/history?interval="+tf+"&outputsize=300"); const j=await r.json(); if(!j.values)throw new Error(j.message||"Keine Daten");
+ const r=await fetch("/api/history?interval="+encodeURIComponent(tf)+"&outputsize=300",{cache:"no-store"});
+  let j;
+  try{j=await r.json()}catch(e){throw new Error("Serverfehler ("+r.status+")");}
+  if(!r.ok || !j.values) throw new Error(j.message||("Kursdaten konnten nicht geladen werden ("+r.status+")"));
  const d=j.values.map(x=>({time:Math.floor(new Date(x.datetime).getTime()/1000),open:+x.open,high:+x.high,low:+x.low,close:+x.close})).sort((a,b)=>a.time-b.time);
  state.data[tf]=d;state.results=state.results||{};state.results[tf]=analyze(tf,d);
  if(tf===state.tf){series.setData(d);chart.timeScale().fitContent()} render(state.results);
@@ -127,7 +130,7 @@ async function loadAll(){for(const tf of ["1min","5min","15min","1h"]){try{await
 document.querySelectorAll(".tf").forEach(b=>b.onclick=async()=>{document.querySelectorAll(".tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.tf=b.dataset.tf;if(state.data[state.tf]){series.setData(state.data[state.tf]);chart.timeScale().fitContent();render(state.results)}else await load(state.tf)});
 const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/stream");
 ws.onopen=()=>{document.getElementById("dot").classList.add("on");document.getElementById("status").textContent="Live"};
-ws.onclose=()=>{document.getElementById("dot").classList.remove("on");document.getElementById("status").textContent="Offline"};
+ws.onclose=()=>{document.getElementById("dot").classList.remove("on");document.getElementById("status").textContent="Live-Feed getrennt"}; ws.onerror=()=>{document.getElementById("dot").classList.remove("on");document.getElementById("status").textContent="Live-Feed Fehler"};
 ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==="tick"){state.price=m.price;document.getElementById("price").textContent=fmt(m.price);document.getElementById("stamp").textContent=new Date(m.timestamp*1000).toLocaleTimeString("de-DE")+" · XAU/USD"}};
 loadAll();setInterval(loadAll,60000);
 </script>
