@@ -38,6 +38,20 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
 .at-note{font-size:10px;color:var(--muted);line-height:1.4;margin-top:10px}
 .at-log{margin-top:10px;background:#0a1221;border:1px solid var(--line);border-radius:10px;padding:9px;font-size:11px;color:#b9c5da;max-height:100px;overflow:auto}
 .at-danger{color:var(--bad)!important}
+
+<style>
+.trade-history{margin-top:14px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(19,29,50,.98),rgba(13,21,37,.98));padding:14px}
+.th-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+.th-title{font-size:15px;font-weight:900}.th-sub{font-size:10px;color:var(--muted);margin-top:3px}
+.th-tabs{display:flex;gap:7px;margin-bottom:10px}.th-tab{border:1px solid var(--line);background:var(--panel2);color:#aebbd4;border-radius:9px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer}.th-tab.active{color:#fff}
+.th-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}.th-card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px}.th-card span{display:block;color:var(--muted);font-size:10px}.th-card strong{display:block;font-size:14px;margin-top:3px}
+.th-list{display:flex;flex-direction:column;gap:7px;max-height:360px;overflow:auto}
+.th-row{border:1px solid var(--line);background:#0a1221;border-radius:10px;padding:10px}.th-row-head{display:flex;justify-content:space-between;gap:8px}.th-side{font-weight:900}.th-side.buy{color:var(--good)}.th-side.sell{color:var(--bad)}
+.th-status{font-size:10px;font-weight:900;color:var(--muted)}.th-meta{display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:7px}.th-meta div{font-size:10px;color:var(--muted)}.th-meta b{color:#dbe5f7;font-weight:700}
+.th-empty{padding:18px;text-align:center;color:var(--muted);font-size:11px}
+.th-clear{border:1px solid rgba(255,109,130,.35);background:transparent;color:var(--bad);border-radius:9px;padding:7px 10px;font-size:10px;font-weight:800;cursor:pointer}
+@media(max-width:600px){.th-summary{grid-template-columns:1fr 1fr}.th-summary .th-card:last-child{grid-column:1/-1}}
+</style>
 </style>
 </style>
 
@@ -115,6 +129,27 @@ main{padding:14px 24px 28px;max-width:1450px;margin:auto}.grid{display:grid;grid
   </div>
   <div id="atLog" class="at-log">Bereit. Es wurden noch keine Demo-Orders simuliert.</div>
   <div class="at-note">⚠️ Dieser Bereich führt keine Vantage-Orders aus und speichert keine Vantage-Zugangsdaten. Live-Handel bleibt deaktiviert.</div>
+</div>
+
+<div id="tradeHistory" class="trade-history">
+  <div class="th-head">
+    <div><div class="th-title">📋 TRADING / ORDER-HISTORIE</div><div class="th-sub">Demo-Trades bleiben nach dem Neuladen gespeichert.</div></div>
+    <button id="thClear" class="th-clear">Historie löschen</button>
+  </div>
+  <div class="th-tabs">
+    <button class="th-tab active" data-tab="all">Alle</button>
+    <button class="th-tab" data-tab="open">Geöffnet</button>
+    <button class="th-tab" data-tab="closed">Abgeschlossen</button>
+  </div>
+  <div class="th-summary">
+    <div class="th-card"><span>Trades</span><strong id="thCount">0</strong></div>
+    <div class="th-card"><span>Trefferquote</span><strong id="thWinRate">0 %</strong></div>
+    <div class="th-card"><span>Netto P/L</span><strong id="thNet">0,00</strong></div>
+    <div class="th-card"><span>Gewinner</span><strong id="thWins">0</strong></div>
+    <div class="th-card"><span>Verlierer</span><strong id="thLosses">0</strong></div>
+    <div class="th-card"><span>Offen</span><strong id="thOpen">0</strong></div>
+  </div>
+  <div id="thList" class="th-list"><div class="th-empty">Noch keine Demo-Orders vorhanden.</div></div>
 </div>
 <script>
 const state={tf:"1min",data:{},results:{},price:null};
@@ -269,6 +304,12 @@ connectWS();
     const tp1=sig==="BUY"?p+A:p-A;
     const tp2=sig==="BUY"?p+2*A:p-2*A;
     log.innerHTML=`<b>${sig==="BUY"?"🟢 DEMO BUY":"🔴 DEMO SELL"}</b> · Kurs ${fmtAt(entry)} · SL ${fmtAt(sl)} · TP1 ${fmtAt(tp1)} · TP2 ${fmtAt(tp2)} · Score ${a.score}`;
+    if(window.demoTradeHistory){
+      const open=window.demoTradeHistory.get().find(t=>t.status==="open");
+      if(!open){
+        window.demoTradeHistory.create({side:sig,entry,sl,tp1,tp2,score:a.score,symbol:"XAU/USD"});
+      }
+    }
   }
 
   toggle.addEventListener("change",()=>{
@@ -280,5 +321,75 @@ connectWS();
   });
 
   setInterval(evaluateDemo,1000);
+})();
+</script>
+
+<script>
+(function(){
+  const KEY="xauusdAnalyzerDemoTradesV1";
+  let trades=[];
+  let activeTab="all";
+  try{trades=JSON.parse(localStorage.getItem(KEY)||"[]");if(!Array.isArray(trades))trades=[];}catch(e){trades=[]}
+
+  const $h=id=>document.getElementById(id);
+  const save=()=>localStorage.setItem(KEY,JSON.stringify(trades));
+  const n=v=>Number.isFinite(Number(v))?Number(v):null;
+  const money=v=>v==null?"—":Number(v).toFixed(2);
+
+  function render(){
+    const closed=trades.filter(t=>t.status==="closed");
+    const wins=closed.filter(t=>n(t.pnl)>0).length;
+    const losses=closed.filter(t=>n(t.pnl)<0).length;
+    const net=closed.reduce((s,t)=>s+(n(t.pnl)||0),0);
+    $h("thCount").textContent=trades.length;
+    $h("thWinRate").textContent=(closed.length?((wins/closed.length)*100).toFixed(1):"0")+" %";
+    $h("thNet").textContent=money(net);
+    $h("thWins").textContent=wins;
+    $h("thLosses").textContent=losses;
+    $h("thOpen").textContent=trades.filter(t=>t.status==="open").length;
+
+    const list=activeTab==="open"?trades.filter(t=>t.status==="open"):activeTab==="closed"?trades.filter(t=>t.status==="closed"):trades;
+    if(!list.length){$h("thList").innerHTML='<div class="th-empty">Keine Orders in diesem Bereich.</div>';return}
+    $h("thList").innerHTML=list.slice().reverse().map(t=>{
+      const side=(t.side||"").toUpperCase();
+      const status=t.status==="open"?"GEÖFFNET":("ABGESCHLOSSEN · "+(t.closeReason||""));
+      const pnl=t.status==="closed"?money(t.pnl):"—";
+      return `<div class="th-row">
+        <div class="th-row-head"><div class="th-side ${side.toLowerCase()}">${side==="BUY"?"🟢 BUY":"🔴 SELL"} · XAU/USD</div><div class="th-status">${status}</div></div>
+        <div class="th-meta">
+          <div>Einstieg <b>${money(t.entry)}</b></div><div>Ausstieg <b>${money(t.exit)}</b></div>
+          <div>SL <b>${money(t.sl)}</b></div><div>TP1 <b>${money(t.tp1)}</b></div>
+          <div>TP2 <b>${money(t.tp2)}</b></div><div>P/L <b>${pnl}</b></div>
+          <div>Score <b>${t.score??"—"}</b></div><div>Zeit <b>${new Date(t.time).toLocaleString("de-DE")}</b></div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  document.querySelectorAll(".th-tab").forEach(btn=>btn.addEventListener("click",()=>{
+    document.querySelectorAll(".th-tab").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");activeTab=btn.dataset.tab;render();
+  }));
+  $h("thClear").addEventListener("click",()=>{
+    if(!trades.length)return;
+    if(confirm("Wirklich die gesamte Demo-Order-Historie löschen?")){trades=[];save();render();}
+  });
+
+  window.demoTradeHistory={
+    get:()=>trades.slice(),
+    create:(data)=>{
+      const t={id:Date.now()+"_"+Math.random().toString(36).slice(2),status:"open",time:new Date().toISOString(),...data};
+      trades.push(t);save();render();return t;
+    },
+    close:(id,exit,reason)=>{
+      const t=trades.find(x=>x.id===id);if(!t)return;
+      const e=n(t.entry),x=n(exit);
+      t.exit=x;t.closeReason=reason||"Signal/TP/SL";t.status="closed";
+      t.pnl=(e!=null&&x!=null)?(t.side==="BUY"?x-e:e-x):null;
+      t.closedAt=new Date().toISOString();save();render();
+    },
+    render
+  };
+  render();
 })();
 </script>
