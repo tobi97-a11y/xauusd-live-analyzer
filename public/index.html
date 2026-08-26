@@ -494,13 +494,13 @@ connectWS();
     account.textContent="—";
     log.textContent="Prüfe Server-Konfiguration und MT5-Verbindungsstatus…";
     try{
-      const r=await fetch("/api/vantage/status",{cache:"no-store"});
+      const r=await fetch("/api/vantage/status?ts="+Date.now(),{cache:"no-store",headers:{"Accept":"application/json"}});
       if(!r.ok) throw new Error("Server-Endpunkt nicht verfügbar ("+r.status+")");
       const d=await r.json();
       if(d.server && d.server!=="VantageMarkets-Live"){
         log.textContent="Serverantwort erhalten, aber der konfigurierte Server stimmt nicht mit VantageMarkets-Live überein.";
       }else{
-        log.textContent=d.message || "Verbindungsstatus erhalten.";
+        log.textContent=(d.message || "Verbindungsstatus erhalten.") + (d.appVersion ? " · App v"+d.appVersion : "");
       }
       conn.textContent=d.connected?"🟢 verbunden":"🟡 nicht verbunden";
       account.textContent=d.account ? String(d.account)+(d.equity!=null?" · Equity "+d.equity:"") : "nicht verfügbar";
