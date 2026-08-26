@@ -152,7 +152,26 @@ async function refreshPrice(){try{const j=await api("/api/price");state.price=j.
 document.querySelectorAll(".tf").forEach(b=>b.addEventListener("click",async()=>{document.querySelectorAll(".tf").forEach(x=>x.classList.remove("active"));b.classList.add("active");state.tf=b.dataset.tf;if(state.data[state.tf]){drawChart(state.data[state.tf]);render()}else{setStatus("Lade "+state.tf+"…");try{await load(state.tf);setStatus("Kursdaten live",true)}catch(e){$("error").textContent=e.message;setStatus("Kursdaten-Fehler")}}}));
 $("retry").addEventListener("click",loadInitial);window.addEventListener("resize",()=>{if(state.data[state.tf])drawChart(state.data[state.tf])});
 const wsUrl=(location.protocol==="https:"?"wss://":"ws://")+location.host+"/stream";let ws;function connectWS(){try{ws=new WebSocket(wsUrl);ws.onopen=()=>setStatus("Live-Feed verbunden",true);ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==="tick"&&Number.isFinite(Number(m.price))){state.price=Number(m.price);$("price").textContent=fmt(state.price);$("stamp").textContent=new Date((Number(m.timestamp)||Date.now()/1000)*1000).toLocaleTimeString("de-DE")+" · XAU/USD"}else if(m.type==="status"&&!m.connected&&state.data[state.tf])setStatus("Kursdaten über Fallback",true)}catch{}};ws.onclose=()=>setTimeout(connectWS,5000);ws.onerror=()=>{}}catch{setTimeout(connectWS,5000)}}
-loadInitial();refreshPrice();startTradeCountdown(15000);setInterval(refreshPrice,15000);setInterval(()=>load(state.tf).catch(e=>console.warn("Refresh:",e.message)),60000);connectWS();
+let refreshBusy=false;
+async function autoRefresh(){
+  if(refreshBusy)return;
+  refreshBusy=true;
+  try{
+    await refreshPrice();
+    await load(state.tf);
+    setStatus("Kursdaten live",true);
+    startTradeCountdown(30000);
+  }catch(e){
+    console.warn("Automatische Aktualisierung:",e.message);
+  }finally{
+    refreshBusy=false;
+  }
+}
+loadInitial();
+refreshPrice();
+startTradeCountdown(30000);
+setInterval(autoRefresh,30000);
+connectWS();
 </script>
 
 </body></html>
