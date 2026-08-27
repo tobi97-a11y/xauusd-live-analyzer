@@ -206,35 +206,46 @@ wss.on("connection", ws => {
 
 app.get("/", (req, res) => res.sendFile(require("path").join(__dirname, "public", "index.html")));
 
+
+// Vantage/MT5 connection status endpoint.
+// This endpoint is diagnostic only: no credentials are accepted and no orders are sent.
+function vantageStatus(_req, res) {
+  const configuredServer = String(process.env.VANTAGE_MT5_SERVER || "VantageMarkets-Live").trim();
+  const bridgeUrl = String(process.env.MT5_BRIDGE_URL || "").trim();
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.json({
+    status: "ok",
+    appVersion: APP_VERSION,
+    connected: false,
+    server: configuredServer,
+    symbol: SYMBOL,
+    account: null,
+    equity: null,
+    bridgeConfigured: Boolean(bridgeUrl),
+    orderExecutionEnabled: false,
+    message: bridgeUrl
+      ? "MT5-Bridge ist konfiguriert, aber Live-Orderausführung bleibt gesperrt."
+      : "Kein MT5-Bridge-Dienst konfiguriert. Nur Diagnose, keine Orderausführung."
+  });
+}
+app.get("/api/vantage/status", vantageStatus);
+app.post("/api/vantage/status", vantageStatus);
+
+// A simple diagnostic endpoint that makes deployment mistakes obvious.
+app.get("/api/version", (_req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.json({
+    ok: true,
+    app: "xauusd-live-analyzer",
+    version: APP_VERSION,
+    service: "xauusd-live-analyzer",
+    node: process.version
+  });
+});
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`XAU/USD Analyzer v${APP_VERSION} läuft auf Port ${PORT}`);
   console.log(`Symbol: ${SYMBOL}`);
   console.log(`Twelve Data API-Key: ${API_KEY ? "konfiguriert" : "FEHLT"}`);
   connectTwelveData();
 });
-
-
-// Vantage/MT5 connection status endpoint.
-// This intentionally performs NO login and NO order execution.
-// It reports whether a future MT5 bridge is configured on the server.
-function vantageStatus(_req, res) {
-  const configuredServer = String(process.env.VANTAGE_MT5_SERVER || "VantageMarkets-Live").trim();
-  const bridgeUrl = String(process.env.MT5_BRIDGE_URL || "").trim();
-  const bridgeConfigured = bridgeUrl.length > 0;
-  res.set("Cache-Control", "no-store");
-  res.json({
-    status:"ok",
-    appVersion:APP_VERSION,
-    connected:false,
-    server:configuredServer,
-    account:null,
-    equity:null,
-    bridgeConfigured,
-    orderExecutionEnabled:false,
-    message: bridgeConfigured
-      ? "MT5-Bridge ist konfiguriert, aber die Live-Orderausführung ist weiterhin gesperrt."
-      : "Kein MT5-Bridge-Dienst konfiguriert. Web-App und Marktanalyse funktionieren unabhängig davon."
-  });
-}
-app.get("/api/vantage/status", vantageStatus);
-app.post("/api/vantage/status", vantageStatus);
